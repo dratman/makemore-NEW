@@ -1,0 +1,13 @@
+LICENSE
+README.md
+bfg.jar
+check-gpu.sh
+embeddings_visualization.html
+large_file_intended_for_commit_6629c07febe11841f52a51d66c4320ac798aaba9/
+list_and_count_unique_words.py
+mnist_train/
+model_archive/
+obs/
+runs/
+string substitutions
+string_substitutions.py
