@@ -1,10 +1,12 @@
+# MAKEMORE (pre-tracer)
+-----------------------
 # You give this script some strings (one per line) and it will generate more strings like it.
 # Uses super state of the art Transformer AI tech.
 # This code is intended to be hackable. Tune it to your needs.
+max_length = 150  # Set maximum input and output line length (was 120)
 
 import os
 import sys
-import time
 from datetime import datetime
 import math
 import argparse
@@ -16,13 +18,7 @@ from torch.nn import functional as F
 from torch.utils.data import Dataset
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-#import keyboard
-
-# def check_for_stop():
-#     return keyboard.is_pressed('space')
-# end check_for_stop()
-
-# -----------------------------------------------------------------------------
+-----------------------------------------------------------------------------
 @dataclass
 class ModelConfig:
     block_size: int = None # length of the input sequences of integers
@@ -395,8 +391,10 @@ def create_datasets(input_file):
     # preprocessing of the input text file
     with open(input_file, 'r') as f:
         data = f.read()
-#    strings = data.splitlines()
-    max_length = 120  # Set maximum line length
+
+#   strings = data.splitlines() NOW USING custom function split_text()
+#   max_length = 120  # Set maximum line length (NOW SET AT TOP OF FILE)
+
     strings = split_text(data, max_length) # Split into lines with a maximum length specified.
 
     strings = [w.strip() for w in strings] # get rid of any leading or trailing white space
