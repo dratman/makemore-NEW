@@ -1,1 +1,1 @@
-python makemore.py -i wikipedia_text/wikipedia_dump_aa -o wikipedia_text --device cuda --n-embd 128 --n-embd2 128 --n-head 8 --n-layer 16 --sample-only --resume
+python makemore.py -i wikipedia_text/clean_text_wikipedia/combined_files/combined_file_001.txt -o wikipedia_text --device cuda --n-embd 512 --n-embd2 512 --n-head 8 --n-layer 96 --sample-only --resume

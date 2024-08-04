@@ -19,18 +19,21 @@ from torch.nn import functional as F
 from torch.utils.data import Dataset
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+import re
+
 # -----------------------------------------------------------------------------
 @dataclass
 class ModelConfig:
-# These are default values, typically overridden by command-line args.
-    block_size: int = None # length of the input sequences of integers
-    vocab_size: int = None # the input integers are in range [0 .. vocab_size -1]
+    # These are default values, typically overridden by command-line args.
+    block_size: int = None  # length of the input sequences of integers
+    vocab_size: int = None  # the input integers are in range [0 .. vocab_size -1]
     # parameters below control the sizes of each model slightly differently
-    n_layer: int = 12 # was 4
-    n_embd: int = 144 # was 64
-    n_embd2: int = 144 # was 64
-    n_head: int = 8 # was 4
+    n_layer: int = 12  # was 4
+    n_embd: int = 144  # was 64
+    n_embd2: int = 144  # was 64
+    n_head: int = 8  # was 4
 # end of class ModelConfig
+
 # -----------------------------------------------------------------------------
 # Transformer Language Model (*exactly* as used in GPT-2)
 
@@ -85,47 +88,6 @@ class CausalSelfAttention(nn.Module): # Comments added by ChatGPT 2024-08-03 4:1
         y = self.c_proj(y)
         return y
 # end of class CausalSelfAttention
-
-# class CausalSelfAttention(nn.Module): -- THIS IS THE OLD VERSION WITHOUT NEW CHATGPT COMMENTS
-#
-#     # A vanilla multi-head masked self-attention layer with a projection at the end.
-#     # It is possible to use torch.nn.MultiheadAttention here but I am including an
-#     # explicit implementation to show that this is not too scary.
-#
-#     def __init__(self, config):
-#         super().__init__()
-#         assert config.n_embd % config.n_head == 0
-#         # key, query, value projections for all heads, but in a batch
-#         self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd)
-#         # output projection
-#         self.c_proj = nn.Linear(config.n_embd, config.n_embd)
-#         # causal mask to ensure that attention is only applied to the left in the input sequence
-#         self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size))
-#                                      .view(1, 1, config.block_size, config.block_size))
-#         self.n_head = config.n_head
-#         self.n_embd = config.n_embd
-#
-#     def forward(self, x):
-#         B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
-#
-#         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-#         q, k ,v  = self.c_attn(x).split(self.n_embd, dim=2)
-#         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-#         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-#         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-#
-#         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
-#         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-#         att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
-#         att = F.softmax(att, dim=-1)
-#         y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-#         y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
-#
-#         # output projection
-#
-#         y = self.c_proj(y)
-#         return y
-# # end of class CausalSelfAttention
 
 class Block(nn.Module):
     # An unassuming Transformer block
@@ -227,89 +189,11 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k
 # Sample from the model and pretty print the decoded samples.
 def print_samples(num=10):
 
-# The next line of code is creating an initial tensor to start the generation process.
-# --->torch.zeros(num, 1, ...): This creates a tensor filled with zeros. The shape
-# of this tensor is (num, 1), where num is the number of samples to generate
-# (passed as an argument to the print_samples function, defaulting to 10).
-# --->dtype=torch.long: This specifies that the data type of the tensor should be a
-# 64-bit integer. In PyTorch, this is often used for storing indices or labels.
-# --->.to(args.device): This moves the tensor to the specified device (CPU or GPU) as
-# defined in the args.device parameter. This ensures that the tensor is on the
-# same device as the model, which is important for performance and compatibility.
-# --->The purpose of this tensor is to serve as the initial input for the
-# generation process.
-# --->The tensor has shape (num, 1) because it represents num sequences, each
-# starting with a single token.It's filled with zeros because zero is used as the index
-# for the <START> token. This tells the model to start generating from the beginning of
-# a sequence.
-# --->This initial tensor will be passed to the generate function, which will then
-# use the model to progressively generate new tokens, building up complete
-# sequences.
-
     X_init = torch.zeros(num, 1, dtype=torch.long).to(args.device)
-
-# This next line is setting up a parameter for top-k sampling.
-# This is a conditional (ternary) expression in Python.
-# --->args.top_k is likely an argument passed to the script, probably set
-# via command line or in a configuration file. It determines whether to use
-# top-k sampling and what value of k to use. If args.top_k is not equal to -1,
-# top_k is set to the value of args.top_k. If args.top_k is equal to -1, top_k is set
-# to None.
-# --->Top-k sampling reduces the likelihood of generating low-probability
-# or nonsensical tokens. When generating each token:
-# --->If top-k sampling is used, the model will only
-# consider the k most likely next tokens. If top-k sampling is not used, the
-# model will consider all possible next tokens.
-# --->Using top-k sampling can help to improve the quality and coherence of
-# the generated text. The value of k controls the trade-off between creativity
-# (lower k) and predictability (higher k) in the output.
 
     top_k = args.top_k if args.top_k != -1 else None
 
-# --->train_dataset.get_output_length(): This method call is likely returning
-# the maximum or expected length of an output sequence in the training dataset.
-# This could be, for example, the maximum string length. The -1 subtraction:
-# As the comment explains, this is because the generation process is already starting
-# with a <START> token (represented by index 0 in the initial tensor we saw earlier).
-# --->Why is this subtraction necessary?
-# --->In many sequence generation tasks, we start with a special <START> token
-# and end with a special <END> or <STOP> token. The initial tensor (X_init)
-# created earlier already includes this <START> token. So we need one
-# less step than the output length, as we're generating every token after
-# the <START> token.
-# --->The steps variable will be used in the generate function call to specify
-# how many tokens should be generated after the initial <START> token. The
-# careful handling of these special tokens and sequence lengths is crucial to
-# ensure that the model generates complete and properly formatted sequences.
-
     steps = train_dataset.get_output_length() - 1
-
-# --->generate(): This is a function call to generate sequences using the
-# trained model. While we don't see the implementation of this function in the
-# provided code snippet, it's likely a custom function defined elsewhere in the
-# codebase. Arguments to generate():
-# --->model: The trained language model being used for generation. X_init: The
-# initial tensor we saw earlier, containing the start tokens. steps: The number
-# of generation steps, which we just discussed in the previous explanation.
-# top_k: The parameter for top-k sampling, which we discussed earlier.
-# do_sample=True: This likely indicates that the generation should use sampling
-# rather than always choosing the most probable token (which would be called
-# greedy decoding).
-# --->.to('cpu'): After generation, the resulting tensor is moved to the CPU.
-# This is often done to make further processing easier, especially if the
-# generation was performed on a GPU.
-# --->The generate() function is doing the heavy lifting here. It's using the
-# trained model to probabilistically generate sequences of tokens, starting
-# from the initial <START> tokens in X_init, and continuing for steps number of
-# steps. The resulting X_samp is likely a tensor with shape (num, steps+1),
-# where:
-# --->num is the number of samples generated (10 by default in this function)
-# steps+1 is the length of each generated sequence (including the initial
-# <START> token)
-# --->Each row in X_samp represents one generated sequence, with each element
-# being a token index corresponding to the model's vocabulary. This generated
-# sample will then be processed and decoded in the subsequent code to produce
-# human-readable output.
 
     X_samp = generate(model, X_init, steps, top_k=top_k, do_sample=True).to('cpu')
 
@@ -422,16 +306,20 @@ class CharDataset(Dataset):
 # end of class CharDataset
 
 def split_text(text, max_length):
+    # Split text into lines and ensure each line is within the max_length
     lines = text.splitlines()
     result = []
     for line in lines:
         while len(line) > max_length:
-            # Split the line at the maximum length
             result.append(line[:max_length])
             line = line[max_length:]
         result.append(line)
     return result
-# end of split_text
+
+def filter_sentences(sentences, max_length):
+    # Only keep sentences that start with a capital letter and end with a period, question mark, or exclamation point
+    sentence_pattern = re.compile(r'^[A-Z].{1,' + str(max_length-2) + r'}[.?!]$')
+    return [s for s in sentences if sentence_pattern.match(s)]
 
 def create_datasets(input_file):
 
@@ -439,14 +327,17 @@ def create_datasets(input_file):
     with open(input_file, 'r') as f:
         data = f.read()
 
-#   strings = data.splitlines() NOW USING custom function split_text()
-#   max_length = 120  # Set maximum line length (NOW SET AT TOP OF FILE)
+    # Split the text into lines with a maximum length specified.
+    strings = split_text(data, max_length)
+    # Filter sentences based on the new criteria
+    strings = filter_sentences(strings, 109)
 
-    strings = split_text(data, max_length) # Split into lines with a maximum length specified.
+    # Get rid of any leading or trailing white space
+    strings = [w.strip() for w in strings]
+    # Get rid of any empty strings
+    strings = [w for w in strings if w]
 
-    strings = [w.strip() for w in strings] # get rid of any leading or trailing white space
-    strings = [w for w in strings if w] # get rid of any empty strings
-    chars = sorted(list(set(''.join(strings)))) # all the possible characters
+    chars = sorted(list(set(''.join(strings))))  # All the possible characters
     max_string_length = max(len(w) for w in strings)
     print(f"number of examples in the dataset: {len(strings)}")
     print(f"max string length: {max_string_length}")
@@ -454,14 +345,14 @@ def create_datasets(input_file):
     print("vocabulary:")
     print(''.join(chars))
 
-    # partition the input data into a training and the test set
-    test_set_size = min(1000, int(len(strings) * 0.1)) # 10% of the training set, or up to 1000 examples
+    # Partition the input data into a training and the test set
+    test_set_size = min(1000, int(len(strings) * 0.1))  # 10% of the training set, or up to 1000 examples
     rp = torch.randperm(len(strings)).tolist()
     train_strings = [strings[i] for i in rp[:-test_set_size]]
     test_strings = [strings[i] for i in rp[-test_set_size:]]
     print(f"split up the dataset into {len(train_strings)} training examples and {len(test_strings)} test examples")
 
-    # wrap in dataset objects
+    # Wrap in dataset objects
     train_dataset = CharDataset(train_strings, chars, max_string_length)
     test_dataset = CharDataset(test_strings, chars, max_string_length)
 
@@ -530,15 +421,15 @@ if __name__ == '__main__':
 
     # init model
     config = ModelConfig(vocab_size=vocab_size, block_size=block_size,
-                       n_layer=args.n_layer, n_head=args.n_head,
-                       n_embd=args.n_embd, n_embd2=args.n_embd2)
+                         n_layer=args.n_layer, n_head=args.n_head,
+                         n_embd=args.n_embd, n_embd2=args.n_embd2)
     if args.type == 'transformer':
         model = Transformer(config)
     else:
         raise ValueError(f'model type {args.type} is not recognized')
     model.to(args.device)
     print(f"model #params: {sum(p.numel() for p in model.parameters())}")
-    if args.resume or args.sample_only: # note: if we sample-only then we also assume we are resuming
+    if args.resume or args.sample_only:  # note: if we sample-only then we also assume we are resuming
         print("resuming from existing model in the workdir")
         model.load_state_dict(torch.load(os.path.join(args.work_dir, 'model.pt')))
     if args.sample_only:
@@ -579,12 +470,6 @@ if __name__ == '__main__':
         if step % 10 == 0:
             print(f"step {step} | loss {loss.item():.4f} | step time {(t1-t0)*1000:.2f}ms")
         # evaluate the model
-
-#         if step > 0 and step % 500 == 0:
-#             # print date and time of loss report
-#             current_datetime = datetime.now()
-#             formatted_datetime = current_datetime.strftime(">>>>>   %Y-%m-%d %H:%M")
-#             print(formatted_datetime)
 
         if step > 0 and step % 500 == 0:
             current_datetime = datetime.now()
