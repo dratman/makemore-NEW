@@ -305,35 +305,37 @@ class CharDataset(Dataset):
         return x, y
 # end of class CharDataset
 
-def split_text(text, max_length):
-    # Split text into lines and ensure each line is within the max_length
-    lines = text.splitlines()
-    result = []
-    for line in lines:
-        while len(line) > max_length:
-            result.append(line[:max_length])
-            line = line[max_length:]
-        result.append(line)
-    return result
+# def extract_sentences(text, max_length):
+#     # Regex pattern to find sentences
+#     sentence_pattern = re.compile(r'([A-Z][^.!?]{0,' + str(max_length - 2) + r'}[.!?])')
+#     sentences = sentence_pattern.findall(text)
+#     return [s.strip() for s in sentences if len(s) <= max_length]
+# def extract_sentences(text, max_length):
+#     # Regex pattern to find sentences
+#     sentence_pattern = re.compile(r'([A-Z][^.!?]{0,' + str(max_length - 2) + r'}[.!?])')
+#     sentences = sentence_pattern.findall(text)
+#     return [s.strip() for s in sentences if len(s) <= max_length]
+#     import re
 
-def filter_sentences(sentences, max_length):
-    # Only keep sentences that start with a capital letter and end with a period, question mark, or exclamation point
-    sentence_pattern = re.compile(r'^[A-Z].{1,' + str(max_length-2) + r'}[.?!]$')
-    return [s for s in sentences if sentence_pattern.match(s)]
+def extract_sentences(text, max_length):
+    # Regex pattern to find sentences
+    sentence_pattern = re.compile(r'([A-Z][^.!?]{0,' + str(max_length - 2) + r'}[.!?])')
+    ascii_pattern = re.compile(r'^[\x20-\x7E]+$')  # Pattern to match only printable ASCII characters
+    sentences = sentence_pattern.findall(text)
+    filtered_sentences = []
+    for s in sentences:
+        if len(s) <= max_length and ascii_pattern.match(s):
+            filtered_sentences.append(s.strip())
+    return filtered_sentences
 
 def create_datasets(input_file):
-
-    # preprocessing of the input text file
+    # Preprocessing of the input text file
     with open(input_file, 'r') as f:
         data = f.read()
 
-    # Split the text into lines with a maximum length specified.
-    strings = split_text(data, max_length)
-    # Filter sentences based on the new criteria
-    strings = filter_sentences(strings, 109)
+    # Extract sentences based on the new criteria
+    strings = extract_sentences(data, 109)
 
-    # Get rid of any leading or trailing white space
-    strings = [w.strip() for w in strings]
     # Get rid of any empty strings
     strings = [w for w in strings if w]
 
@@ -357,7 +359,7 @@ def create_datasets(input_file):
     test_dataset = CharDataset(test_strings, chars, max_string_length)
 
     return train_dataset, test_dataset
-# end of create_datasets
+
 
 class InfiniteDataLoader:
     """
@@ -482,7 +484,7 @@ if __name__ == '__main__':
 
             writer.add_scalar("Loss/train", train_loss, step)
             writer.add_scalar("Loss/test", test_loss, step)
-            writer.add_scalar("Learning rate", learning_rate, step)
+            writer.add_scalar("Learning rate", args.learning_rate, step)
             writer.flush()
             print(f"step {step} train loss: {train_loss} test loss: {test_loss}")
             # save the model to disk if it has improved
