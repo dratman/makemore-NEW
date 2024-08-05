@@ -4,6 +4,7 @@
 # Uses super state of the art Transformer AI tech.
 # This code is intended to be hackable. Tune it to your needs.
 max_length = 210  # Set maximum input and output line length (was 120)
+min_length = 25   # Set minimum input (training) sentence length.
 
 import os
 import sys
@@ -324,8 +325,10 @@ def extract_sentences(text, max_length):
     sentences = sentence_pattern.findall(text)
     filtered_sentences = []
     for s in sentences:
-        if len(s) <= max_length and ascii_pattern.match(s):
+        if len(s) <= max_length and len(s)>= min_length and ascii_pattern.match(s):
             filtered_sentences.append(s.strip())
+            # Also print to stderr
+            print(s.strip(), file=sys.stderr) # DEBUG ONLY
     return filtered_sentences
 
 def create_datasets(input_file):
